@@ -1,0 +1,43 @@
+<title>Lion City Rails</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/*CSS*/
+</style>
+<div class="shell">
+  <header class="top">
+    <div class="brand">
+      <div class="stripe" aria-hidden="true"><i style="background:var(--c-red)"></i><i style="background:var(--c-green)"></i><i style="background:var(--c-purple)"></i><i style="background:var(--c-amber)"></i><i style="background:var(--c-blue)"></i><i style="background:var(--c-brown)"></i></div>
+      <h1>Lion City Rails</h1>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="topbtns">
+      <button type="button" class="btn small" data-act="rules">Rules</button>
+      <button type="button" class="btn small" data-act="sound" id="soundBtn">Sound on</button>
+      <button type="button" class="btn small" data-act="menu">Menu</button>
+    </div>
+  </header>
+  <main class="game">
+    <section class="boardwrap" aria-label="Game board">
+      <div class="board" id="board">
+        <svg id="map" role="group" aria-label="Map of Singapore with MRT routes" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="legend" id="legend" aria-hidden="true"></div>
+        <div class="zoomctl">
+          <button type="button" data-act="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" data-act="zoom-out" aria-label="Zoom out">&minus;</button>
+          <button type="button" data-act="zoom-fit" aria-label="Fit whole map" style="font-size:12px">Fit</button>
+        </div>
+        <div class="maptip" id="maptip" hidden></div>
+      </div>
+      <div class="sheet" id="sheet" hidden></div>
+    </section>
+    <aside class="side" id="side" aria-label="Play desk"></aside>
+  </main>
+</div>
+<div id="overlay"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+/*JS*/
+</script>

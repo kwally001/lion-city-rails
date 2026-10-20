@@ -1,0 +1,13 @@
+{
+  "name": "lion-city-rails",
+  "private": true,
+  "description": "Ticket to Ride-style train game on a map of Singapore, peer-to-peer multiplayer.",
+  "scripts": {
+    "build": "python3 build.py",
+    "serve": "python3 -m http.server 8000",
+    "broker": "node test/broker.js 9000",
+    "test:sim": "node test/sim.js",
+    "test:p2p": "python3 test/p2p_test.py"
+  },
+  "devDependencies": { "peer": "^1.0.2" }
+}
