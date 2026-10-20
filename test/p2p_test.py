@@ -1,14 +1,14 @@
 """Peer-to-peer multiplayer test for the GitHub build (web/index.html).
-Needs:  npm i peer   and a local broker:  node test/broker.js 9000      then:  python3 build.py && python3 test/p2p_test.py
+Needs:  npm i aedes ws   and a local broker:  node test/broker.js 9001      then:  python3 build.py && python3 test/p2p_test.py
 Plays a whole 4-seat game (3 browsers + 1 computer), with a friend reloading, the host reloading and resuming, and a spectator joining."""
 import subprocess, time, sys, os
 from playwright.sync_api import sync_playwright
 SP = os.environ.get("SHOTS", "/tmp/") 
 srv = subprocess.Popen(["python3", "-m", "http.server", "8124", "--directory", "."], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(0.8)
-URL = "http://localhost:8124/index.html?broker=127.0.0.1:9000"
+URL = "http://localhost:8124/index.html?broker=ws://127.0.0.1:9001"
 errors = []
-FAST = """(()=>{const st=window.setTimeout;window.setTimeout=(f,d,...a)=>st(f,(d>150&&d<5000)?8:d,...a);})()"""
+FAST = "void 0"   # real timers: the connection layer relies on its own timeouts
 def newpage(b, tag, ctx=None):
     ctx = ctx or b.new_context(viewport={'width': 1300, 'height': 850}); pg = ctx.new_page()
     pg.on("pageerror", lambda e: errors.append((tag, "pageerror", str(e))))
@@ -35,7 +35,7 @@ def ok(label, cond):
     print(("PASS " if cond else "FAIL ") + label)
     if not cond: errors.append((label, "assert", ""))
 with sync_playwright() as p:
-    b = p.chromium.launch(args=["--disable-features=WebRtcHideLocalIpsWithMdns"])
+    b = p.chromium.launch(args=[])
     A = newpage(b, "amy"); B = newpage(b, "ben"); C = newpage(b, "cat")
     ok("menu is multiplayer only", A.locator("[data-act=solo-start]").count() == 0 and A.locator("[data-act=host]").count() == 1)
     A.fill("#nick", "Amy"); A.click("[data-act=host]"); A.wait_for_selector(".bigcode", timeout=20000)

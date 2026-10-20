@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Builds the single-file game page:  python3 build.py   ->   index.html
-Inlines the stylesheet, the PeerJS library and all game scripts so the page needs nothing but a static host."""
+Inlines the stylesheet, the MQTT library and all game scripts so the page needs nothing but a static host."""
 import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 t = open('src/template.html').read()
 css = open('src/style.css').read()
 rd = lambda files: "\n".join(open('src/' + f).read() for f in files)
-peer = open('src/vendor/peerjs.min.js').read()
-js = 'window.LCR_P2P = true;\n' + rd(['mapdata.js', 'engine.js', 'ai.js', 'net_p2p.js', 'scenery.js', 'map.js', 'ui.js'])
+peer = open('src/vendor/mqtt.min.js').read()
+js = 'window.LCR_P2P = true;\n' + rd(['mapdata.js', 'engine.js', 'ai.js', 'net_mqtt.js', 'scenery.js', 'map.js', 'ui.js'])
 assert '</script' not in js and '</script' not in peer
 i = t.index('<div class="shell">')
 head, body = t[:i], t[i:]

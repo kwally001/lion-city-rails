@@ -312,6 +312,7 @@ async function joinOnline(code, resume) {
     if (P2P) busy('Connecting to the game…', 'This can take up to 20 seconds.');
     const r = await Net.joinGame(code, App.nick.trim(), { resume: !!resume });
     if (P2P) $('#toast').hidden = true;
+    if (r.role === 'offline') { App.err = 'That game exists, but its host is offline right now. Ask them to open the game page and keep it in view.'; showMenu(); return; }
     if (r.role === 'missing') { App.err = P2P ? 'No game found with that code. Check the code, and make sure the host still has the game open and in view.' : 'No game found with that code.'; showMenu(); return; }
     resetGameUi(); App.code = code; App.host = r.meta.host === Net.uid();
     if (r.role === 'lobby') { App.mode = 'lobby'; watchLobbyNow(); }
@@ -410,7 +411,7 @@ function showMenu() {
         <div class="field"><label>Opponents</label>${seg('opps', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], App.cfg.opps)}</div>
         <div class="field"><label>Level</label>${seg('level', [['easy', 'Easy'], ['normal', 'Normal'], ['sharp', 'Sharp']], App.cfg.level)}</div>
         <button class="btn primary" data-act="solo-start">Start game</button></div>`}
-      <div class="opt-card"><h3>Play with friends</h3><p>Everyone plays on their own device. ${P2P ? 'Host a game, then send friends this page and the 4-letter code. The host keeps this tab open while you play.' : 'Share the page, then swap a 4-letter code.'}</p>${online}</div>
+      <div class="opt-card"><h3>Play with friends</h3><p>Everyone plays on their own device. ${P2P ? 'Host a game, then send friends the invite link or the 4-letter code. The host keeps this tab open while you play.' : 'Share the page, then swap a 4-letter code.'}</p>${online}</div>
     </div>
     ${resume ? `<div class="row" style="margin-top:14px">${resume}</div>` : ''}
     <div class="row" style="margin-top:16px"><button class="btn small" data-act="rules">How to play</button></div></div></div>`, 'menu');
