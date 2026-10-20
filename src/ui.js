@@ -296,28 +296,29 @@ async function hostOnline() {
   readNick();
   if (!App.nick.trim()) { App.err = 'Enter your name first.'; showMenu(); return; }
   try {
-    if (P2P) toast('Setting up your game…');
+    if (P2P) busy('Setting up your game…', 'Contacting the connection service.');
     const code = await Net.createGame(App.nick.trim());
     if (P2P) $('#toast').hidden = true;
     resetGameUi(); App.mode = 'lobby'; App.code = code; App.host = true; App.state = null; App.me = -1;
     watchLobbyNow();
   } catch (e) { App.err = errText(e); showMenu(); }
 }
-async function joinOnline(code) {
+async function joinOnline(code, resume) {
   readNick();
   code = (code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (code.length !== 4) { App.err = 'Game codes have 4 letters or numbers.'; showMenu(); return; }
   if (!App.nick.trim()) { App.err = 'Enter your name first.'; showMenu(); return; }
   try {
-    if (P2P) toast('Looking for that game…');
-    const r = await Net.joinGame(code, App.nick.trim());
+    if (P2P) busy('Connecting to the game…', 'This can take up to 20 seconds.');
+    const r = await Net.joinGame(code, App.nick.trim(), { resume: !!resume });
     if (P2P) $('#toast').hidden = true;
-    if (r.role === 'missing') { App.err = 'No game found with that code.'; showMenu(); return; }
+    if (r.role === 'missing') { App.err = P2P ? 'No game found with that code. Check the code, and make sure the host still has the game open and in view.' : 'No game found with that code.'; showMenu(); return; }
     resetGameUi(); App.code = code; App.host = r.meta.host === Net.uid();
     if (r.role === 'lobby') { App.mode = 'lobby'; watchLobbyNow(); }
     else enterOnlineGame(code);
   } catch (e) { App.err = errText(e); showMenu(); }
 }
+function busy(t, sub) { openOverlay(`<div class="modal"><div class="dialog" role="status">${lineStrip()}<h2 class="sm">${esc(t)}</h2><p class="lead">${esc(sub || '')}</p></div></div>`, 'busy'); }
 function errText(e) {
   const c = e && e.code;
   if (c === 'invalid_argument') return 'You can look at this game but not play in it. Ask the page owner to share it with you as an Editor or Contributor.';
@@ -472,7 +473,7 @@ function onAct(act, el) {
     case 'again': startSolo(App.soloCfg || App.cfg); break;
     case 'host': hostOnline(); break;
     case 'join': joinOnline(($('#jcode') || {}).value); break;
-    case 'resume': joinOnline(el.dataset.code); break;
+    case 'resume': joinOnline(el.dataset.code, true); break;
     case 'ai-count': Net.setAiCount(App.code, +el.dataset.n).catch(() => toast('Could not change the computer players.')); break;
     case 'lobby-start': lobbyStart(); break;
     case 'lobby-leave': { const code = App.code; const wasHost = App.host; teardown(); Net.leaveLobby(code).catch(() => {}); App.mode = 'menu'; App.code = null; App.host = false; showMenu(); break; }
@@ -552,7 +553,7 @@ function boot() {
   MV.init({ onRoute, onHover });
   renderTop(); paintMap();
   showMenu();
-  if (Net.onLink) Net.onLink(k => toast(k === 'back' ? 'Reconnected to the host.' : k === 'gone' ? 'Could not reconnect. The host may have closed the game.' : 'Lost the connection to the host. Reconnecting…'));
+  if (Net.onLink) Net.onLink(k => toast(k === 'back' ? 'Reconnected to the host.' : k === 'gone' ? 'Could not reconnect. The host may have closed the game.' : k === 'brokerlost' ? 'Lost the connection service. Friends cannot find your game until it is back. Reconnecting…' : k === 'brokerback' ? 'Connection service is back. Friends can join again.' : 'Lost the connection to the host. Reconnecting…'));
   Net.init().then(res => {
     App.net = res; App.netChecked = true;
     if (res && res.ok && !App.nick && res.name) { App.nick = res.name.slice(0, 16); }

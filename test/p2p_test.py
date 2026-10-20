@@ -9,8 +9,8 @@ time.sleep(0.8)
 URL = "http://localhost:8124/index.html?broker=127.0.0.1:9000"
 errors = []
 FAST = """(()=>{const st=window.setTimeout;window.setTimeout=(f,d,...a)=>st(f,(d>150&&d<5000)?8:d,...a);})()"""
-def newpage(b, tag):
-    ctx = b.new_context(viewport={'width': 1300, 'height': 850}); pg = ctx.new_page()
+def newpage(b, tag, ctx=None):
+    ctx = ctx or b.new_context(viewport={'width': 1300, 'height': 850}); pg = ctx.new_page()
     pg.on("pageerror", lambda e: errors.append((tag, "pageerror", str(e))))
     pg.on("console", lambda m: errors.append((tag, "console", m.text)) if m.type == "error" and "ERR_TUNNEL" not in m.text and "Failed to load resource" not in m.text else None)
     pg.add_init_script(FAST)
@@ -73,6 +73,11 @@ with sync_playwright() as p:
             did.add('spec'); D = newpage(b, "dan"); D.fill("#nick", "Dan"); D.fill("#jcode", code); D.click("[data-act=join]")
             D.wait_for_function("__LCR.App.state && __LCR.App.mode==='online'", timeout=15000)
             ok("spectator watches without a hand", info(D)['me'] == -1 and D.locator("#side >> text=Your hand").count() == 0)
+        if step == 55 and 'seat' not in did:
+            did.add('seat'); ctx = C.context; C.close(); C = newpage(b, "cat2", ctx); pages[2] = C
+            C.fill("#nick", "Cat"); C.fill("#jcode", code); C.click("[data-act=join]")
+            C.wait_for_function("__LCR.App.state && __LCR.App.mode==='online'", timeout=20000)
+            ok("friend who closed the tab and typed the code gets the same seat back", info(C)['me'] == me0[2])
         if step == 70 and 'hostreload' not in did:
             did.add('hostreload'); vbefore = max((i or {'v': 0})['v'] for i in infos)
             A.reload(); A.wait_for_timeout(500)
@@ -92,6 +97,16 @@ with sync_playwright() as p:
     for pg in pages: pg.wait_for_timeout(300)
     gids = [info(pg)['gid'] for pg in pages]
     ok("rematch starts the same new game everywhere", len(set(gids)) == 1 and all(pg.locator(".winner").count() == 0 for pg in pages))
+    # two tabs in one browser can host and join each other (handy for trying it out alone)
+    ctx = b.new_context(viewport={'width': 1300, 'height': 850})
+    T1 = newpage(b, "tab1", ctx); T2 = newpage(b, "tab2", ctx)
+    T1.fill("#nick", "Solo"); T1.click("[data-act=host]"); T1.wait_for_selector(".bigcode", timeout=20000); c2 = T1.inner_text(".bigcode").strip()
+    T2.fill("#nick", "Twin"); T2.fill("#jcode", c2); T2.click("[data-act=join]"); T2.wait_for_selector(".bigcode", timeout=25000)
+    T1.wait_for_timeout(500)
+    ok("second tab in the same browser joins as a separate player", T1.locator(".joined li").count() == 3)
+    T1.click("[data-act=lobby-start]")
+    for pg in (T1, T2): pg.wait_for_function("window.__LCR && __LCR.App.state && __LCR.App.mode==='online'", timeout=15000)
+    ok("the two tabs have different seats", {info(T1)['me'], info(T2)['me']} == {0, 1})
     print("ERRORS:", errors)
     b.close()
 srv.terminate()

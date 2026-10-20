@@ -40,6 +40,8 @@ const send = (c, m) => { try { if (c && c.open) c.send(m); } catch (e) {} };
 
 function friendly(e) {
   const t = e && (e.type || e.code);
+  if (t === 'noconn' && e.detail === 'host did not reply') return new Error("Reached the host's device, but the game did not answer. Ask the host to keep the game open and in view (not minimised or in another tab), then try again.");
+  if (t === 'noconn') return new Error(`Found the game, but could not open a direct connection to the host (${e.detail || 'no reply'}). Your network or the host's may be blocking peer-to-peer connections. Try both devices on the same Wi-Fi, or a different network.`);
   if (t === 'browser-incompatible') return new Error('This browser cannot make peer-to-peer connections. Try a recent Chrome, Edge, Safari or Firefox.');
   return new Error('Could not reach the PeerJS connection service. Check your internet connection and try again.');
 }
@@ -60,6 +62,7 @@ function openPeer(id) {
   });
 }
 function killPeer() {
+  clearInterval(hostTimer); hostTimer = null; try { if (wl) wl.release(); } catch (e) {} wl = null;
   const p = peer; peer = null;
   if (conn) { try { conn.close(); } catch (e) {} conn = null; }
   hostConns.forEach((u, c) => { try { c.close(); } catch (e) {} }); hostConns.clear();
@@ -97,8 +100,17 @@ function hostSetup(p) {
     c.on('close', () => hostDrop(c));
     c.on('error', () => hostDrop(c));
   });
-  p.on('disconnected', () => setTimeout(() => { try { if (peer === p && !p.destroyed) p.reconnect(); } catch (e) {} }, 1500));
+  const heal = () => { try { if (peer === p && !p.destroyed && (p.disconnected || !p.open)) p.reconnect(); } catch (e) {} };
+  p.on('disconnected', () => { fire('link', 'brokerlost'); setTimeout(heal, 1500); });
+  p.on('open', () => { if (S && role === 'host') fire('link', 'brokerback'); });
   p.on('error', () => {});
+  clearInterval(hostTimer); hostTimer = setInterval(heal, 4000);
+  try { document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { heal(); wake(); } }); } catch (e) {}
+  wake();
+}
+let hostTimer = null, wl = null;
+function wake() {   // keep a phone or laptop awake while hosting, so the game stays visible to friends
+  try { if (navigator.wakeLock && role === 'host' && !wl) navigator.wakeLock.request('screen').then(l => { wl = l; l.addEventListener('release', () => { wl = null; }); }, () => {}); } catch (e) {}
 }
 function hostDrop(c) {
   const u = hostConns.get(c); if (!hostConns.delete(c) || !S) return;
@@ -109,8 +121,10 @@ function hostMsg(c, m) {
   if (!S || role !== 'host' || !m || typeof m !== 'object') return;
   const u = hostConns.get(c);
   if (m.t === 'hello') {
-    const id = clean(m.uid, 40); if (!id) return;
-    hostConns.forEach((v, k) => { if (v === id && k !== c) { hostConns.delete(k); try { k.close(); } catch (e) {} } });
+    let id = clean(m.uid, 40); if (!id) return;
+    const seat = clean(m.seat, 40);   // a returning player who lost their tab gets their old seat back, if nobody is using it
+    if (seat && seat !== id && S.state && !S.state.players.some(p => p.id === id) && seat !== S.meta.host && S.state.players.some(p => p.id === seat)) id = seat;
+    hostConns.forEach((v, k) => { if (v === id && k !== c) { hostConns.delete(k); send(k, { t: 'replaced' }); setTimeout(() => { try { k.close(); } catch (e) {} }, 200); } });
     hostConns.set(c, id);
     let changed = false;
     if (S.meta.status === 'lobby') {
@@ -118,7 +132,7 @@ function hostMsg(c, m) {
       if (!S.joins[id]) { if (Object.keys(S.joins).length < 12) { S.joins[id] = { nick, at: Date.now() }; changed = true; } }
       else if (S.joins[id].nick !== nick) { S.joins[id].nick = nick; changed = true; }
     }
-    send(c, { t: 'snap', meta: S.meta, joins: S.joins, state: S.state, ids: onlineIds() });
+    send(c, { t: 'snap', meta: S.meta, joins: S.joins, state: S.state, ids: onlineIds(), you: id });
     if (changed) pushJoins(c);
     pushPresence();
     return;
@@ -172,6 +186,7 @@ async function resumeHost(rec) {
 /* ---------- client ---------- */
 let rcTimer = null, rcBusy = false, snapWait = null;
 function applySnap(m) {
+  if (m.you && m.you !== uid) { adoptUid(m.you); LS.set('lcr_seat_' + S.code, uid); }
   S.meta = m.meta; S.joins = m.joins || {}; S.state = m.state || null; S.online = m.ids || [];
   fire('meta', copy(S.meta)); fire('joins', joinRows()); if (S.state) fire('state', copy(S.state)); fire('pres', new Set(S.online));
 }
@@ -183,21 +198,25 @@ function clientMsg(m) {
   else if (m.t === 'state') { if (validState(m.v)) { S.state = m.v; fire('state', copy(S.state)); } }
   else if (m.t === 'pres') { S.online = m.ids || []; fire('pres', new Set(S.online)); }
   else if (m.t === 'ack') { const f = acks.get(m.id); if (f) { acks.delete(m.id); f(!!m.ok); } }
+  else if (m.t === 'replaced') { closing = true; fire('err', new Error('This game was opened in another tab.')); fire('link', 'gone'); killPeer(); closing = false; clearInterval(rcTimer); rcTimer = null; }
   else if (m.t === 'closed') { closing = true; fire('err', new Error('The host closed this game.')); fire('link', 'gone'); killPeer(); closing = false; clearInterval(rcTimer); rcTimer = null; }
 }
 function clientConnect(code, nick) {
   return new Promise(async (resolve, reject) => {
-    let settled = false, p = null, c = null, to = null;
+    let settled = false, p = null, c = null, to = null, opened = false;
     const fail = e => { if (settled) return; settled = true; clearTimeout(to); snapWait = null; try { if (c) c.close(); } catch (er) {} try { if (p) p.destroy(); } catch (er) {} reject(e); };
     try { p = await openPeer(null); } catch (e) { fail(e); return; }
     p.on('error', e => { if (e && e.type === 'peer-unavailable') fail(Object.assign(new Error('missing'), { code: 'missing' })); else if (!settled) fail(e); });
     c = p.connect(NS + code, { reliable: true });
     snapWait = m => { if (settled) return; settled = true; clearTimeout(to); peer = p; conn = c; resolve(m); };
-    c.on('open', () => send(c, { t: 'hello', uid, nick: nick || lastNick }));
+    c.on('open', () => { opened = true; send(c, { t: 'hello', uid, nick: nick || lastNick, seat: LS.get('lcr_seat_' + code) || null }); });
     c.on('data', clientMsg);
-    c.on('close', () => clientLost(c));
-    c.on('error', () => clientLost(c));
-    to = setTimeout(() => fail(Object.assign(new Error('timeout'), { code: 'missing' })), 10000);
+    c.on('close', () => { if (!settled) fail(Object.assign(new Error('closed'), { code: 'noconn', detail: 'closed' })); else clientLost(c); });
+    c.on('error', e => { if (!settled) fail(Object.assign(new Error('error'), { code: 'noconn', detail: (e && e.type) || 'error' })); else clientLost(c); });
+    to = setTimeout(() => {
+      const ice = c && c.peerConnection && c.peerConnection.iceConnectionState;
+      fail(Object.assign(new Error('timeout'), { code: 'noconn', detail: opened ? 'host did not reply' : 'ice ' + (ice || 'unstarted') }));
+    }, 20000);
   });
 }
 function clientLost(c) {
@@ -216,14 +235,15 @@ function clientLost(c) {
   }, 3000);
 }
 
-async function joinGame(code, nick) {
+async function joinGame(code, nick, opts) {
   const rec = hostRecord(code);
-  if (rec) {                       // this browser was hosting that game: pick it up again
+  let mine = null; try { mine = sessionStorage.getItem('lcr_uid'); } catch (e) {}
+  if (rec && ((opts && opts.resume) || mine === rec.meta.host)) {                       // this browser was hosting that game: pick it up again
     await resumeHost(rec);
     return { role: S.meta.status === 'lobby' ? 'lobby' : 'resume', meta: copy(S.meta) };
   }
   closeAll(); lastNick = nickOf(nick);
-  const saved = LS.get('lcr_seat_' + code); if (saved) adoptUid(saved); else ensureUid();
+  ensureUid();
   S = fresh(code); role = 'client';
   let snap;
   try { snap = await clientConnect(code, lastNick); }
